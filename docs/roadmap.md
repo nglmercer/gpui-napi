@@ -46,29 +46,13 @@ This checklist tracks the progress of bridging [GPUI 0.2.2](https://docs.rs/gpui
 
 ---
 
-## 🔴 Phase 4: Advanced Features (Planned)
-
-### 🎨 Style System
-
-- [ ] **Tailwind-like API**: Completion of the Fluent API for all style properties.
-- [ ] **Themes**: Bridge global color and style overrides.
-- [ ] **Animations**: Logic for `Animation` and micro-transitions.
-
-### 🛠️ Tooling & DX
-
-- [ ] **Asset Loading**: Bridge `AssetSource` for local/remote assets.
-- [ ] **Macros**: Custom proc-macros for registering actions in JS.
-- [ ] **TypeScript Declarations**: Fully documented `index.d.ts`.
-
----
-
 ## 📊 Summary of Items Status
 
 | Categoría     | Total Items | Implemented | Progress |
 | :------------ | :---------: | :---------: | :------- |
-| **Structs**   |    200+     |     32      | 🟢 16%   |
-| **Enums**     |     70+     |     24      | 🟢 34%   |
-| **Functions** |     50+     |     12      | 🟢 24%   |
+| **Structs**   |    200+     |     50      | 🟢 25%   |
+| **Enums**     |     70+     |     43      | 🟢 61%   |
+| **Functions** |     50+     |     20      | 🟢 40%   |
 | **Traits**    |     40+     |      0      | ⚪ 0%    |
 | **Macros**    |     10+     |      0      | ⚪ 0%    |
 

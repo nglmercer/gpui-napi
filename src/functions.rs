@@ -1,6 +1,6 @@
 // GPUI Functions implementation for NAPI
 use napi_derive::napi;
-use crate::structs::Pixels;
+use crate::structs::{Pixels, DivElement, SvgElement, ImageElement, Point, Size};
 
 #[napi]
 pub fn px(value: f64) -> Pixels {
@@ -9,53 +9,40 @@ pub fn px(value: f64) -> Pixels {
 
 #[napi]
 pub fn rems(value: f64) -> f64 {
-    value // Simplified for now
+    value 
 }
 
 #[napi]
 pub fn percentage(value: f64) -> f64 {
-    value // Simplified for now
+    value
 }
 
 #[napi]
-pub fn rgba(r: f64, g: f64, b: f64, a: f64) -> crate::structs::Rgba {
-    crate::structs::Rgba { r, g, b, a }
+pub fn div() -> DivElement {
+    DivElement::new()
 }
 
 #[napi]
-pub fn hsla(h: f64, s: f64, l: f64, a: f64) -> crate::structs::Hsla {
-    crate::structs::Hsla { h, s, l, a }
+pub fn point(x: f64, y: f64) -> Point {
+    Point { x, y }
 }
 
 #[napi]
-pub fn div() -> crate::structs::DivElement {
-    crate::structs::DivElement::new()
+pub fn size(width: f64, height: f64) -> Size {
+    Size { width, height }
 }
 
 #[napi]
-pub fn point(x: f64, y: f64) -> crate::structs::Point {
-    crate::structs::Point { x, y }
+pub fn svg() -> SvgElement {
+    SvgElement {}
 }
 
 #[napi]
-pub fn size(width: f64, height: f64) -> crate::structs::Size {
-    crate::structs::Size { width, height }
+pub fn img() -> ImageElement {
+    ImageElement {}
 }
 
 #[napi]
-pub fn svg() -> crate::structs::DivElement {
-    // Should be SvgElement but using Div for now as shell
-    crate::structs::DivElement::new()
+pub fn canvas() -> DivElement {
+    DivElement::new()
 }
-
-#[napi]
-pub fn img() -> crate::structs::DivElement {
-    // Should be ImgElement but using Div for now as shell
-    crate::structs::DivElement::new()
-}
-
-#[napi]
-pub fn canvas() -> crate::structs::DivElement {
-    crate::structs::DivElement::new()
-}
-

@@ -229,5 +229,133 @@ pub enum PlatformInput {
     ScrollWheel,
 }
 
+#[napi]
+pub enum ImageSource {
+    Uri,
+    File,
+    Data,
+}
+
+#[napi]
+pub enum FileDropEvent {
+    Entered,
+    Hovered,
+    Exited,
+    Dropped,
+}
+
+#[napi]
+pub enum TextOverflow {
+    Clip,
+    Ellipsis,
+}
+
+#[napi]
+pub enum AnchoredFitMode {
+    Overflow,
+    Snap,
+}
+
+#[napi]
+pub enum AnchoredPositionMode {
+    Absolute,
+    ToWindow,
+}
+
+#[napi]
+pub enum ResizeEdge {
+    Top,
+    Right,
+    Bottom,
+    Left,
+    TopRight,
+    TopLeft,
+    BottomRight,
+    BottomLeft,
+}
+
+#[napi]
+pub enum PromptLevel {
+    Info,
+    Warning,
+    Critical,
+}
+
+#[napi]
+pub enum DispatchPhase {
+    Capture,
+    Bubble,
+}
+
+#[napi]
+pub enum Decorations {
+    Server,
+    Client,
+}
+
+#[napi]
+pub enum WindowAppearance {
+    Light,
+    Dark,
+    VibrantLight,
+    VibrantDark,
+}
+
+#[napi]
+pub enum WindowBackgroundAppearance {
+    Opaque,
+    Transparent,
+    Blurred,
+}
+
+#[napi]
+pub enum WindowDecorations {
+    Full,
+    None,
+}
+
+#[napi]
+pub enum WindowControlArea {
+    TopLeft,
+    TopRight,
+}
+
+#[napi]
+pub enum FillRule {
+    NonZero,
+    EvenOdd,
+}
+
+#[napi]
+pub enum HitboxBehavior {
+    PassThrough,
+    Block,
+}
+
+#[napi]
+pub enum ListHorizontalSizingBehavior {
+    Unconstrained,
+    Constrained,
+}
+
+#[napi]
+pub enum ListMeasuringBehavior {
+    FixedItemSize,
+    VariableItemSize,
+}
+
+#[napi]
+pub enum SystemMenuType {
+    App,
+    File,
+    Edit,
+    View,
+    Window,
+    Help,
+}
+
+
+
+
 
 
