@@ -1,50 +1,51 @@
 import { expect, test, describe } from "bun:test";
 import {
-  Message,
-  MessageType,
-  createGreeting,
-  add,
-  processNumbers,
-  divideNumbers,
-  generateSequence,
-  delayedMessage,
+  getGpuiVersion,
+  div,
+  px,
+  hsla,
+  rgba,
+  FlexDirection,
+  Visibility,
+  AppHandle,
 } from "../index";
 
-describe("NAPI Module Tests", () => {
-  // 1. Test Synchronous Functions
-  test("math operations: add and divide", () => {
-    expect(add(1, 5)).toBe(6);
-    expect(divideNumbers(1, 2)).toBe(0.5);
+describe("GPUI NAPI Module Tests", () => {
+  test("get version", () => {
+    expect(getGpuiVersion()).toBe("0.2.2");
   });
 
-  test("string formatting: createGreeting", () => {
-    const greeting = createGreeting("user", "-");
-    expect(greeting).toContain("user");
-    expect(greeting).toBe("- user, welcome to NAPI!");
+  test("units and colors", () => {
+    const p = px(10);
+    expect(p.value).toBe(10);
+
+    const color = hsla(180, 0.5, 0.5, 1.0);
+    expect(color.h).toBe(180);
+    expect(color.a).toBe(1.0);
+
+    const color2 = rgba(255, 0, 0, 1.0);
+    expect(color2.r).toBe(255);
   });
 
-  test("array mapping: processNumbers", () => {
-    const result = processNumbers([1, 2, 3]);
-    expect(result).toEqual([2, 4, 6]);
+  test("enums", () => {
+    expect(FlexDirection.Row).toBe(0);
+    expect(Visibility.Visible).toBe(0);
+    expect(Visibility.Hidden).toBe(1);
   });
 
-  // 2. Test Classes
-  test("Message class instantiation", () => {
-    const msg = new Message("hello", MessageType.Info);
-    expect(msg).toBeDefined();
-    // Use the methods your console.log suggested exist
-    expect(typeof msg.getTypeString).toBe("function");
+  test("element chaining", () => {
+    const element = div()
+      .flex()
+      .wFull()
+      .hFull()
+      .bg("#ff0000");
+    
+    expect(element).toBeDefined();
   });
 
-  // 3. Test Asynchronous Functions
-  test("async sequence generation", async () => {
-    const sequence = await generateSequence(1, 5);
-    expect(sequence).toHaveLength(5);
-    expect(sequence).toEqual([1, 2, 3, 4, 5]);
-  });
-
-  test("async delayed message", async () => {
-    const message = await delayedMessage(100); // Reduced delay for faster tests
-    expect(message).toBe("Success after delay");
+  test("app and window handles", () => {
+    const app = new AppHandle();
+    expect(app).toBeDefined();
+    expect(typeof app.run).toBe("function");
   });
 });

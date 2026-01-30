@@ -1,7 +1,7 @@
 {
-  "name": "napi-template-bun",
-  "version": "1.0.0",
-  "description": "Template for NAPI (Node-API) native addons with Bun runtime",
+  "name": "gpui-napi",
+  "version": "0.1.0",
+  "description": "NAPI (Node-API) bindings for GPUI",
   "keywords": [
     "napi",
     "node-addon",
@@ -55,7 +55,7 @@
     "bun": ">=1.0.0"
   },
   "napi": {
-    "binaryName": "template",
+    "binaryName": "gpui",
     "targets": [
       "x86_64-pc-windows-msvc",
       "i686-pc-windows-msvc",
