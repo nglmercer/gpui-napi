@@ -1,6 +1,28 @@
 use napi_derive::napi;
 use napi::bindgen_prelude::*;
-use gpui::{Application, Pixels as GPixels, Point as GPoint, Size as GSize, Bounds as GBounds};
+use napi::bindgen_prelude::ErrorStrategy;
+use gpui::{Application, Pixels as GPixels, Point as GPoint, Size as GSize, Bounds as GBounds, WindowHandle as GWindowHandle, Render, IntoElement, ParentElement, div, Window, Context, App, AppContext};
+use std::cell::RefCell;
+use crate::renderer::render_div;
+use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
+
+thread_local! {
+    static APP_CX: RefCell<Option<*mut App>> = RefCell::new(None);
+}
+
+pub struct NapiRootView {
+    pub(crate) root: Option<DivElement>,
+}
+
+impl Render for NapiRootView {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        if let Some(ref root) = self.root {
+            render_div(root)
+        } else {
+            div().child("No root set")
+        }
+    }
+}
 
 #[napi(object)]
 #[derive(Clone, Copy)]
@@ -166,19 +188,29 @@ impl AppHandle {
     }
 
     #[napi]
-    pub fn run(&self, _callback: Function) -> Result<()> {
+    pub fn run(&self, callback: Function) -> Result<()> {
         let app = Application::new();
-        app.run(move |_cx| {
-            // In a real implementation, we would use a thread-safe way to call JS
-            // and pass a wrapper around `cx`.
+        let tsfn: ThreadsafeFunction<()> = callback.build_threadsafe_function()
+            .build()?;
+
+        app.run(move |cx| {
             println!("GPUI App started. Bridging context to JS...");
+            
+            APP_CX.with(|rcx: &RefCell<Option<*mut App>>| {
+                *rcx.borrow_mut() = Some(cx as *mut App);
+            });
+
+            let _ = tsfn.call((), ThreadsafeFunctionCallMode::Blocking);
+            
+            // Note: In a real app, we might want to keep the context available,
+            // but for a simple run() call that sets up the initial state, this is okay.
         });
         Ok(())
     }
 
     #[napi]
     pub fn open_window(&self, options: WindowOptions) -> WindowHandle {
-        let _gpui_options = gpui::WindowOptions {
+        let gpui_options = gpui::WindowOptions {
             window_bounds: options.bounds.map(|b| gpui::WindowBounds::Windowed(b.into())),
             titlebar: options.titlebar.map(|_| gpui::TitlebarOptions {
                 title: None,
@@ -192,13 +224,24 @@ impl AppHandle {
         };
         
         println!("Opening window with GPUI options...");
-        WindowHandle { id: 1 }
+
+        let handle = APP_CX.with(|rcx: &RefCell<Option<*mut App>>| {
+            let ptr = rcx.borrow().expect("AppContext not found. Are you calling open_window outside of app.run?");
+            let cx = unsafe { &mut *ptr };
+            
+            cx.open_window(gpui_options, |_window, cx| {
+                cx.new(|_cx| NapiRootView { root: None })
+            })
+        });
+
+        WindowHandle { id: 1, handle: Some(handle.expect("Failed to open window")) }
     }
 }
 
 #[napi]
 pub struct WindowHandle {
     pub id: u32,
+    pub(crate) handle: Option<gpui::WindowHandle<NapiRootView>>,
 }
 
 #[napi]
@@ -214,24 +257,44 @@ impl WindowHandle {
     }
 
     #[napi]
-    pub fn set_root(&self, _root: &DivElement) {
+    pub fn set_root(&self, root: &DivElement) {
         println!("Setting root element for window {}", self.id);
+        if let Some(ref handle) = self.handle {
+            let root = root.clone();
+            APP_CX.with(|rcx: &RefCell<Option<*mut App>>| {
+                if let Some(ptr) = *rcx.borrow() {
+                    let cx = unsafe { &mut *ptr };
+                    let _ = handle.update(cx, move |view, _window, _cx| {
+                        view.root = Some(root);
+                    });
+                } else {
+                    println!("Error: AppContext not available in set_root");
+                }
+            });
+        }
     }
 }
 
 #[napi]
 #[derive(Clone)]
 pub struct DivElement {
-    pub width: Option<f64>,
-    pub height: Option<f64>,
-    pub background: Option<String>,
-    pub padding: Option<f64>,
-    pub margin: Option<f64>,
-    pub border_width: Option<f64>,
-    pub border_color: Option<String>,
-    pub corner_radius: Option<f64>,
-    pub flex: bool,
-    pub flex_direction: Option<crate::enums::FlexDirection>,
+    pub(crate) width: Option<f64>,
+    pub(crate) height: Option<f64>,
+    pub(crate) background: Option<String>,
+    pub(crate) padding: Option<f64>,
+    pub(crate) margin: Option<f64>,
+    pub(crate) border_width: Option<f64>,
+    pub(crate) border_color: Option<String>,
+    pub(crate) corner_radius: Option<f64>,
+    pub(crate) flex: bool,
+    pub(crate) flex_direction: Option<crate::enums::FlexDirection>,
+    pub(crate) children: Vec<Child>,
+}
+
+#[derive(Clone)]
+pub enum Child {
+    Text(String),
+    Element(DivElement),
 }
 
 impl Default for DivElement {
@@ -247,6 +310,7 @@ impl Default for DivElement {
             corner_radius: None,
             flex: false,
             flex_direction: None,
+            children: Vec::new(),
         }
     }
 }
@@ -259,7 +323,13 @@ impl DivElement {
     }
 
     #[napi]
-    pub fn child(&self, _child: String) -> Self { self.clone() }
+    pub fn child(&mut self, child: Either<String, &DivElement>) -> Self {
+        match child {
+            Either::A(text) => self.children.push(Child::Text(text)),
+            Either::B(element) => self.children.push(Child::Element(element.clone())),
+        }
+        self.clone()
+    }
 
     #[napi]
     pub fn flex(&mut self) -> Self { 
@@ -283,7 +353,7 @@ impl DivElement {
 
     #[napi]
     pub fn w_full(&mut self) -> Self { 
-        self.width = Some(100.0); // Simple mapping to % or similar
+        self.width = Some(100.0); 
         self.clone() 
     }
 

@@ -5,6 +5,7 @@ pub mod functions;
 pub mod macros;
 pub mod structs;
 pub mod traits;
+pub mod renderer;
 
 #[napi]
 pub fn get_gpui_version() -> String {
