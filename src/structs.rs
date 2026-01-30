@@ -56,6 +56,70 @@ pub struct Corners {
     pub bottom_left: f64,
 }
 
+#[napi(object)]
+pub struct BoxShadow {
+    pub color: Rgba,
+    pub offset: Point,
+    pub blur: f64,
+    pub spread: f64,
+}
+
+#[napi(object)]
+pub struct TextStyle {
+    pub color: Rgba,
+    pub font_size: f64,
+    pub font_family: String,
+    pub line_height: f64,
+}
+
+#[napi(object)]
+pub struct Modifiers {
+    pub shift: bool,
+    pub control: bool,
+    pub alt: bool,
+    pub platform: bool, // cmd on mac, win on windows
+}
+
+#[napi(object)]
+pub struct Keystroke {
+    pub key: String,
+    pub modifiers: Modifiers,
+}
+
+#[napi]
+pub struct Task {
+    // Shell for async task
+}
+
+#[napi]
+pub struct Timer {
+    // Shell for timer
+}
+
+#[napi]
+pub struct Animation {
+    // Shell for animation config
+}
+
+#[napi]
+pub struct FocusHandle {
+    pub id: u32,
+}
+
+#[napi(object)]
+pub struct SizeRefinement {
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+}
+
+#[napi(object)]
+pub struct EdgesRefinement {
+    pub top: Option<f64>,
+    pub right: Option<f64>,
+    pub bottom: Option<f64>,
+    pub left: Option<f64>,
+}
+
 #[napi]
 pub struct AppHandle {
     // This would hold a reference to gpui::App
@@ -72,6 +136,11 @@ impl AppHandle {
     pub fn run(&self) {
         // Implementation for running the app
     }
+
+    #[napi]
+    pub fn quit(&self) {
+        // Implementation for quitting
+    }
 }
 
 #[napi]
@@ -85,7 +154,18 @@ impl WindowHandle {
     pub fn close(&self) {
         // Implementation for closing the window
     }
+
+    #[napi]
+    pub fn focus(&self) {
+        // Implementation for focusing
+    }
+
+    #[napi]
+    pub fn is_active(&self) -> bool {
+        true
+    }
 }
+
 
 #[napi]
 pub struct DivElement {
@@ -118,4 +198,70 @@ impl DivElement {
     pub fn bg(&self, _color: String) -> Self {
         Self {}
     }
+
+    #[napi]
+    pub fn border(&self, _width: f64) -> Self {
+        Self {}
+    }
+
+    #[napi]
+    pub fn border_color(&self, _color: String) -> Self {
+        Self {}
+    }
+
+    #[napi]
+    pub fn p(&self, _value: f64) -> Self {
+        Self {}
+    }
+
+    #[napi]
+    pub fn px(&self, _value: f64) -> Self {
+        Self {}
+    }
+
+    #[napi]
+    pub fn py(&self, _value: f64) -> Self {
+        Self {}
+    }
+
+    #[napi]
+    pub fn m(&self, _value: f64) -> Self {
+        Self {}
+    }
+
+    #[napi]
+    pub fn mx(&self, _value: f64) -> Self {
+        Self {}
+    }
+
+    #[napi]
+    pub fn my(&self, _value: f64) -> Self {
+        Self {}
+    }
+
+    #[napi]
+    pub fn items_center(&self) -> Self {
+        Self {}
+    }
+
+    #[napi]
+    pub fn justify_center(&self) -> Self {
+        Self {}
+    }
+
+    #[napi]
+    pub fn gap(&self, _value: f64) -> Self {
+        Self {}
+    }
+
+    #[napi]
+    pub fn rounded(&self, _value: f64) -> Self {
+        Self {}
+    }
+
+    #[napi]
+    pub fn shadow(&self) -> Self {
+        Self {}
+    }
 }
+
