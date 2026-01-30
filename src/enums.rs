@@ -27,6 +27,7 @@ pub enum AlignItems {
 }
 
 #[napi]
+#[derive(Clone, Copy)]
 pub enum FlexDirection {
     Row,
     Column,
