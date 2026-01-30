@@ -1,10 +1,9 @@
 use napi_derive::napi;
 use napi::bindgen_prelude::*;
-use napi::bindgen_prelude::ErrorStrategy;
-use gpui::{Application, Pixels as GPixels, Point as GPoint, Size as GSize, Bounds as GBounds, WindowHandle as GWindowHandle, Render, IntoElement, ParentElement, div, Window, Context, App, AppContext};
+use gpui::{Application, Pixels as GPixels, Point as GPoint, Size as GSize, Bounds as GBounds, Render, IntoElement, ParentElement, div, Window, Context, App, AppContext};
 use std::cell::RefCell;
 use crate::renderer::render_div;
-use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
+use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 
 thread_local! {
     static APP_CX: RefCell<Option<*mut App>> = RefCell::new(None);
@@ -188,9 +187,9 @@ impl AppHandle {
     }
 
     #[napi]
-    pub fn run(&self, callback: Function) -> Result<()> {
+    pub fn run(&self, callback: Function<(), ()>) -> Result<()> {
         let app = Application::new();
-        let tsfn: ThreadsafeFunction<()> = callback.build_threadsafe_function()
+        let tsfn = callback.build_threadsafe_function()
             .build()?;
 
         app.run(move |cx| {
@@ -200,18 +199,32 @@ impl AppHandle {
                 *rcx.borrow_mut() = Some(cx as *mut App);
             });
 
+            // Call the JS callback - this will set up windows and UI
             let _ = tsfn.call((), ThreadsafeFunctionCallMode::Blocking);
             
-            // Note: In a real app, we might want to keep the context available,
-            // but for a simple run() call that sets up the initial state, this is okay.
+            println!("JS callback completed, entering main loop...");
+            
+            // Keep the app running - don't exit here
+            // The app will continue running until all windows are closed
         });
         Ok(())
     }
 
     #[napi]
     pub fn open_window(&self, options: WindowOptions) -> WindowHandle {
+        // Set default window bounds if not provided
+        let window_bounds = options.bounds.map(|b| gpui::WindowBounds::Windowed(b.into()))
+            .or_else(|| {
+                // Default window size: 800x600
+                let default_bounds = GBounds {
+                    origin: GPoint { x: gpui::px(100.0), y: gpui::px(100.0) },
+                    size: GSize { width: gpui::px(800.0), height: gpui::px(600.0) },
+                };
+                Some(gpui::WindowBounds::Windowed(default_bounds))
+            });
+
         let gpui_options = gpui::WindowOptions {
-            window_bounds: options.bounds.map(|b| gpui::WindowBounds::Windowed(b.into())),
+            window_bounds,
             titlebar: options.titlebar.map(|_| gpui::TitlebarOptions {
                 title: None,
                 appears_transparent: false,
@@ -219,16 +232,18 @@ impl AppHandle {
             }),
             focus: options.focus.unwrap_or(true),
             show: options.show.unwrap_or(true),
-            kind: gpui::WindowKind::Normal, 
+            kind: gpui::WindowKind::Normal,
+            is_movable: options.is_movable.unwrap_or(true),
+            display_id: None, // DisplayId constructor is private, can't convert from u32
             ..Default::default()
         };
-        
+
         println!("Opening window with GPUI options...");
 
         let handle = APP_CX.with(|rcx: &RefCell<Option<*mut App>>| {
             let ptr = rcx.borrow().expect("AppContext not found. Are you calling open_window outside of app.run?");
             let cx = unsafe { &mut *ptr };
-            
+
             cx.open_window(gpui_options, |_window, cx| {
                 cx.new(|_cx| NapiRootView { root: None })
             })

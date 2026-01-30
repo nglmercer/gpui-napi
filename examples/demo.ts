@@ -11,7 +11,11 @@ app.run(() => {
         titlebar: true,
         center: true,
         focus: true,
-        show: true
+        show: true,
+        bounds: {
+            origin: { x: 100, y: 100 },
+            size: { width: 800, height: 600 }
+        }
     });
 
     // Create a container with some style
