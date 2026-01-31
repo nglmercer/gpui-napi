@@ -62,6 +62,10 @@ pub enum WindowCommand {
         window_id: u64,
         title: String,
     },
+    SetIgnoreInput {
+        window_id: u64,
+        ignore: bool,
+    },
     CloseWindow {
         window_id: u64,
     },

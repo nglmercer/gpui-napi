@@ -57,6 +57,9 @@ impl WindowManagerApp {
                 WindowCommand::SetTitle { window_id, title } => {
                     self.set_window_title(window_id, title);
                 }
+                WindowCommand::SetIgnoreInput { window_id, ignore } => {
+                    self.set_window_ignore_input(window_id, ignore);
+                }
                 WindowCommand::CloseWindow { window_id } => {
                     self.close_window_by_id(window_id, event_loop);
                 }
@@ -230,6 +233,19 @@ impl WindowManagerApp {
         for managed in self.windows.values() {
             if managed.state_id == window_id {
                 managed.window.set_title(&title);
+                break;
+            }
+        }
+    }
+
+    fn set_window_ignore_input(&self, window_id: u64, ignore: bool) {
+        for managed in self.windows.values() {
+            if managed.state_id == window_id {
+                // set_cursor_hittest(false) makes the window ignore mouse events (click-through)
+                // set_cursor_hittest(true) restores normal mouse event handling
+                if let Err(e) = managed.window.set_cursor_hittest(!ignore) {
+                    eprintln!("Failed to set cursor hittest for window {}: {}", window_id, e);
+                }
                 break;
             }
         }

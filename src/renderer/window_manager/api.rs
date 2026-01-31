@@ -301,6 +301,21 @@ impl WindowManager {
         Ok(())
     }
 
+    /// Set window to ignore mouse/keyboard input (click-through)
+    #[napi]
+    pub fn set_ignore_input(&self, window_id: JsNumber, ignore: bool) -> Result<()> {
+        let window_id = js_number_to_u64(window_id)?;
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| napi::Error::new(napi::Status::GenericFailure, "Lock poisoned"))?;
+
+        state
+            .pending_commands
+            .push(WindowCommand::SetIgnoreInput { window_id, ignore });
+        Ok(())
+    }
+
     /// Close a window
     #[napi]
     pub fn close_window(&self, window_id: JsNumber) -> Result<()> {
