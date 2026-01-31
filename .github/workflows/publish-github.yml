@@ -1,0 +1,97 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Tag Version (e.g. v0.0.1)'
+        required: true
+        default: 'v0.0.1'
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+env:
+  APP_NAME: winit-napi
+  NODE_VERSION: "24"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  call-build:
+    name: Call Build Workflow
+    uses: ./.github/workflows/build.yml
+    secrets: inherit
+
+  # JOB 2: PUBLISH (Github Release + NPM)
+  release:
+    name: Publish Release
+    needs: call-build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine Tag
+        id: tag_info
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "TAG_NAME=${{ inputs.version }}" >> $GITHUB_ENV
+          else
+            echo "TAG_NAME=${{ github.ref_name }}" >> $GITHUB_ENV
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{env.NODE_VERSION}}
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: ${{env.APP_NAME}}*
+          merge-multiple: true
+
+      - name: Prepare Package
+        run: |
+          mkdir -p package
+
+          cp package.json index.js index.d.ts README.md LICENSE package/ 2>/dev/null || true
+
+          echo "Flattening artifacts..."
+          find artifacts -name "*.node" -exec cp {} package/ \;
+
+          ls -l package/
+
+          VERSION="${TAG_NAME#v}"
+          echo "Setting version to $VERSION"
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package/package.json')); p.version='$VERSION'; fs.writeFileSync('package/package.json', JSON.stringify(p,null,2));"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: package/*.node
+          tag_name: ${{ env.TAG_NAME }}
+          name: Release ${{ env.TAG_NAME }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to NPM
+        run: npm publish ./package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

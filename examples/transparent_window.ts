@@ -51,7 +51,7 @@ const framelessWindow = Number(manager.createWindowWithOptions(
   750, 50,
   false, // alwaysOnTop
   false, // transparent
-  false  // no decorations (frameless)
+  true  // no decorations (frameless)
 ));
 manager.clear(framelessWindow, 50, 100, 50);
 drawLabel(framelessWindow, 50, 90, "Frameless!", 255, 255, 255);
@@ -65,7 +65,7 @@ const overlayWindow = Number(manager.createWindowWithOptions(
   50, 350,
   true,  // alwaysOnTop
   true,  // transparent
-  false  // no decorations
+  true  // no decorations
 ));
 // Draw a gradient with transparency
 for (let y = 0; y < 200; y++) {
@@ -88,7 +88,7 @@ const glassWindow = Number(manager.createWindowWithOptions(
   400, 350,
   false, // alwaysOnTop
   true,  // transparent
-  true   // decorations
+  false  // decorations
 ));
 // Create a frosted glass effect with semi-transparent white
 drawGlassEffect(glassWindow);
@@ -152,15 +152,7 @@ const operationsInterval = setInterval(() => {
 
     case 5:
       clearInterval(operationsInterval);
-      console.log("\n=== Transparency Demo Complete ===");
       console.log(`\nFinal window count: ${manager.windowCount}`);
-      console.log("\nFeature Summary:");
-      console.log("  - Window 1: Normal window with frame (baseline)");
-      console.log("  - Window 2: Transparent window with frame");
-      console.log("  - Window 3: Frameless window (no decorations)");
-      console.log("  - Window 4: Transparent + Frameless overlay");
-      console.log("  - Window 5: Glass effect with transparency");
-      console.log("\nNote: Transparency effects depend on compositor support.");
       break;
   }
 }, 2000);

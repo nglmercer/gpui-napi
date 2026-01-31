@@ -88,6 +88,7 @@ impl WindowManager {
 
     /// Create a new window with all options
     #[napi]
+    #[allow(clippy::too_many_arguments)]
     pub fn create_window_with_options(
         &mut self,
         width: u32,
@@ -167,8 +168,9 @@ impl WindowManager {
         b: u8,
     ) -> Result<()> {
         let window_id = js_number_to_u64(window_id)?;
-        // ARGB format (0xAARRGGBB) - standard for most graphics APIs
-        let color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32) | (255_u32 << 24);
+        // Softbuffer uses 0RGB format: 00 RRRRRRRR GGGGGGGG BBBBBBBB
+        // The high byte is ignored, so we use 0x00 for opaque
+        let color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
 
         let mut state = self
             .state
@@ -187,7 +189,9 @@ impl WindowManager {
     }
 
     /// Set a pixel with alpha (RGBA) in a window's buffer
+    /// Note: Alpha channel is not supported by softbuffer. The alpha value is ignored.
     #[napi]
+    #[allow(clippy::too_many_arguments)]
     pub fn set_pixel_rgba(
         &self,
         window_id: JsNumber,
@@ -196,11 +200,12 @@ impl WindowManager {
         r: u8,
         g: u8,
         b: u8,
-        a: u8,
+        _a: u8,
     ) -> Result<()> {
         let window_id = js_number_to_u64(window_id)?;
-        // ARGB format (0xAARRGGBB)
-        let color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32) | ((a as u32) << 24);
+        // Softbuffer uses 0RGB format (no alpha support in pixel data)
+        // Alpha is handled by the window's transparency setting, not per-pixel
+        let color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
 
         let mut state = self
             .state
@@ -222,8 +227,8 @@ impl WindowManager {
     #[napi]
     pub fn clear(&self, window_id: JsNumber, r: u8, g: u8, b: u8) -> Result<()> {
         let window_id = js_number_to_u64(window_id)?;
-        // ARGB format (0xAARRGGBB)
-        let color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32) | (255_u32 << 24);
+        // Softbuffer uses 0RGB format: 00 RRRRRRRR GGGGGGGG BBBBBBBB
+        let color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
 
         let mut state = self
             .state
@@ -248,8 +253,8 @@ impl WindowManager {
     }
 
     fn clear_inner(&self, window_id: u64, r: u8, g: u8, b: u8) -> Result<()> {
-        // ARGB format (0xAARRGGBB)
-        let color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32) | (255_u32 << 24);
+        // Softbuffer uses 0RGB format: 00 RRRRRRRR GGGGGGGG BBBBBBBB
+        let color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
 
         let mut state = self
             .state

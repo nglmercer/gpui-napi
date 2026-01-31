@@ -1,5 +1,5 @@
 {
-  "name": "gpui-napi",
+  "name": "winit-napi",
   "version": "0.1.0",
   "description": "NAPI (Node-API) bindings for GPUI",
   "keywords": [
@@ -55,7 +55,7 @@
     "bun": ">=1.0.0"
   },
   "napi": {
-    "binaryName": "gpui",
+    "binaryName": "winit-napi",
     "targets": [
       "x86_64-pc-windows-msvc",
       "i686-pc-windows-msvc",
