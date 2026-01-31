@@ -1,6 +1,7 @@
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use softbuffer::{Context, Surface};
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
@@ -67,6 +68,34 @@ impl WindowRenderer {
     #[napi(getter)]
     pub fn get_height(&self) -> u32 {
         self.height
+    }
+
+    /// Present the pixel buffer in a window
+    /// This will create a window and display the rendered pixels
+    #[napi]
+    pub fn present(&self, title: String) -> Result<()> {
+        let event_loop = EventLoop::new().map_err(|e| {
+            napi::Error::new(
+                napi::Status::GenericFailure,
+                format!("Failed to create event loop: {}", e),
+            )
+        })?;
+
+        let mut app = PixelWindowApp::new(
+            self.width,
+            self.height,
+            title,
+            self.pixel_buffer.clone(),
+        );
+
+        event_loop.run_app(&mut app).map_err(|e| {
+            napi::Error::new(
+                napi::Status::GenericFailure,
+                format!("Event loop error: {}", e),
+            )
+        })?;
+
+        Ok(())
     }
 }
 
@@ -137,22 +166,113 @@ impl SimpleWindowApp {
     }
 
     fn render(&mut self) {
-        if let Some(surface) = &mut self.surface {
-            let buffer_result = surface.buffer_mut();
-            if let Ok(mut buffer) = buffer_result {
-                // Fill with the specified color
-                for pixel in buffer.iter_mut() {
-                    *pixel = self.color;
-                }
-                buffer.present().unwrap_or_else(|e| {
-                    eprintln!("Failed to present buffer: {}", e);
-                });
+        if let (Some(window), Some(surface)) = (&self.window, &mut self.surface) {
+            let size = window.inner_size();
+            let width = NonZeroU32::new(size.width.max(1)).expect("Width should not be zero");
+            let height = NonZeroU32::new(size.height.max(1)).expect("Height should not be zero");
+            surface.resize(width, height).expect("Failed to resize surface");
+            let mut buffer = surface.buffer_mut().expect("Failed to get buffer");
+            // Fill with the specified color
+            for pixel in buffer.iter_mut() {
+                *pixel = self.color;
             }
+            buffer.present().unwrap_or_else(|e| {
+                eprintln!("Failed to present buffer: {}", e);
+            });
         }
     }
 }
 
 impl ApplicationHandler for SimpleWindowApp {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        let window_attributes = WindowAttributes::default()
+            .with_title(&self.title)
+            .with_inner_size(LogicalSize::new(self.width, self.height));
+
+        let window = Arc::new(
+            event_loop
+                .create_window(window_attributes)
+                .expect("Failed to create window"),
+        );
+
+        let context = Context::new(window.clone()).expect("Failed to create softbuffer context");
+        let surface = Surface::new(&context, window.clone()).expect("Failed to create surface");
+
+        self.window = Some(window);
+        self.context = Some(context);
+        self.surface = Some(surface);
+
+        // Request initial redraw
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        _window_id: WindowId,
+        event: WindowEvent,
+    ) {
+        match event {
+            WindowEvent::CloseRequested => {
+                event_loop.exit();
+            }
+            WindowEvent::RedrawRequested => {
+                self.render();
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Application for displaying a pixel buffer in a window
+struct PixelWindowApp {
+    width: u32,
+    height: u32,
+    title: String,
+    pixel_buffer: Vec<u32>,
+    window: Option<Arc<Window>>,
+    surface: Option<Surface<Arc<Window>, Arc<Window>>>,
+    context: Option<Context<Arc<Window>>>,
+}
+
+impl PixelWindowApp {
+    fn new(width: u32, height: u32, title: String, pixel_buffer: Vec<u32>) -> Self {
+        Self {
+            width,
+            height,
+            title,
+            pixel_buffer,
+            window: None,
+            surface: None,
+            context: None,
+        }
+    }
+
+    fn render(&mut self) {
+        if let (Some(_window), Some(surface)) = (&self.window, &mut self.surface) {
+            let width = NonZeroU32::new(self.width.max(1)).expect("Width should not be zero");
+            let height = NonZeroU32::new(self.height.max(1)).expect("Height should not be zero");
+            surface.resize(width, height).expect("Failed to resize surface");
+            let mut buffer = surface.buffer_mut().expect("Failed to get buffer");
+
+            // Copy pixel buffer to the surface buffer
+            let pixel_count = (self.width * self.height) as usize;
+            let buffer_len = buffer.len();
+
+            for i in 0..pixel_count.min(buffer_len) {
+                buffer[i] = self.pixel_buffer[i];
+            }
+
+            buffer.present().unwrap_or_else(|e| {
+                eprintln!("Failed to present buffer: {}", e);
+            });
+        }
+    }
+}
+
+impl ApplicationHandler for PixelWindowApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window_attributes = WindowAttributes::default()
             .with_title(&self.title)
