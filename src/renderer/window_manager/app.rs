@@ -39,8 +39,21 @@ impl WindowManagerApp {
                     x,
                     y,
                     always_on_top,
+                    transparent,
+                    decorations,
                 } => {
-                    self.create_window(event_loop, id, width, height, title, x, y, always_on_top);
+                    self.create_window(
+                        event_loop,
+                        id,
+                        width,
+                        height,
+                        title,
+                        x,
+                        y,
+                        always_on_top,
+                        transparent,
+                        decorations,
+                    );
                 }
                 WindowCommand::Present { window_id } => {
                     self.request_redraw(window_id);
@@ -94,10 +107,14 @@ impl WindowManagerApp {
         x: Option<i32>,
         y: Option<i32>,
         always_on_top: bool,
+        transparent: bool,
+        decorations: bool,
     ) {
         let mut window_attrs = WindowAttributes::default()
             .with_title(&title)
-            .with_inner_size(LogicalSize::new(width, height));
+            .with_inner_size(LogicalSize::new(width, height))
+            .with_transparent(transparent)
+            .with_decorations(decorations);
 
         if always_on_top {
             window_attrs = window_attrs.with_window_level(WindowLevel::AlwaysOnTop);
@@ -137,7 +154,11 @@ impl WindowManagerApp {
         } else {
             // Fallback: create window state if not pre-registered (shouldn't happen)
             let pixel_count = (width * height) as usize;
-            let pixel_buffer = vec![0xFF000000u32; pixel_count];
+            let pixel_buffer = if transparent {
+                vec![0x00000000u32; pixel_count] // Fully transparent ARGB
+            } else {
+                vec![0xFF000000u32; pixel_count] // Opaque black ARGB
+            };
 
             state.windows.insert(
                 id,
@@ -150,6 +171,8 @@ impl WindowManagerApp {
                     x,
                     y,
                     always_on_top,
+                    transparent,
+                    decorations,
                     winit_id: Some(winit_id),
                 },
             );
@@ -244,7 +267,10 @@ impl WindowManagerApp {
                 // set_cursor_hittest(false) makes the window ignore mouse events (click-through)
                 // set_cursor_hittest(true) restores normal mouse event handling
                 if let Err(e) = managed.window.set_cursor_hittest(!ignore) {
-                    eprintln!("Failed to set cursor hittest for window {}: {}", window_id, e);
+                    eprintln!(
+                        "Failed to set cursor hittest for window {}: {}",
+                        window_id, e
+                    );
                 }
                 break;
             }

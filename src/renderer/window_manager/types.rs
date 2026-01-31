@@ -22,6 +22,8 @@ pub struct WindowState {
     pub x: Option<i32>,
     pub y: Option<i32>,
     pub always_on_top: bool,
+    pub transparent: bool,
+    pub decorations: bool,
     pub winit_id: Option<WindowId>,
 }
 
@@ -35,6 +37,8 @@ pub enum WindowCommand {
         x: Option<i32>,
         y: Option<i32>,
         always_on_top: bool,
+        transparent: bool,
+        decorations: bool,
     },
     SetPixel {
         window_id: u64,

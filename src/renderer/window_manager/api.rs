@@ -70,7 +70,7 @@ impl WindowManager {
     /// Create a new window and return its ID
     #[napi]
     pub fn create_window(&mut self, width: u32, height: u32, title: String) -> Result<u64> {
-        self.create_window_with_options(width, height, title, None, None, false)
+        self.create_window_with_options(width, height, title, None, None, false, false, true)
     }
 
     /// Create a new window with position options
@@ -83,7 +83,7 @@ impl WindowManager {
         x: i32,
         y: i32,
     ) -> Result<u64> {
-        self.create_window_with_options(width, height, title, Some(x), Some(y), false)
+        self.create_window_with_options(width, height, title, Some(x), Some(y), false, false, true)
     }
 
     /// Create a new window with all options
@@ -96,6 +96,8 @@ impl WindowManager {
         x: Option<i32>,
         y: Option<i32>,
         always_on_top: bool,
+        transparent: bool,
+        decorations: bool,
     ) -> Result<u64> {
         let id = {
             let mut counter = self
@@ -114,7 +116,12 @@ impl WindowManager {
 
         // Pre-register the window in shared state so window_count() and window_exists() work immediately
         let pixel_count = (width * height) as usize;
-        let pixel_buffer = vec![0xFF000000u32; pixel_count];
+        // For transparent windows, initialize with transparent pixels (alpha = 0)
+        let pixel_buffer = if transparent {
+            vec![0x00000000u32; pixel_count] // Fully transparent ARGB
+        } else {
+            vec![0xFF000000u32; pixel_count] // Opaque black ARGB
+        };
 
         state.windows.insert(
             id,
@@ -127,6 +134,8 @@ impl WindowManager {
                 x,
                 y,
                 always_on_top,
+                transparent,
+                decorations,
                 winit_id: None, // Will be set when window is actually created
             },
         );
@@ -139,6 +148,8 @@ impl WindowManager {
             x,
             y,
             always_on_top,
+            transparent,
+            decorations,
         });
 
         Ok(id)
@@ -156,8 +167,40 @@ impl WindowManager {
         b: u8,
     ) -> Result<()> {
         let window_id = js_number_to_u64(window_id)?;
-        // BGRA format for X11: AA BB GG RR
-        let color = (255_u32 << 24) | ((b as u32) << 16) | ((g as u32) << 8) | (r as u32);
+        // ARGB format (0xAARRGGBB) - standard for most graphics APIs
+        let color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32) | (255_u32 << 24);
+
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| napi::Error::new(napi::Status::GenericFailure, "Lock poisoned"))?;
+
+        if let Some(window_state) = state.windows.get_mut(&window_id) {
+            if x < window_state.width && y < window_state.height {
+                let index = (y * window_state.width + x) as usize;
+                window_state.pixel_buffer[index] = color;
+                window_state.needs_redraw = true;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Set a pixel with alpha (RGBA) in a window's buffer
+    #[napi]
+    pub fn set_pixel_rgba(
+        &self,
+        window_id: JsNumber,
+        x: u32,
+        y: u32,
+        r: u8,
+        g: u8,
+        b: u8,
+        a: u8,
+    ) -> Result<()> {
+        let window_id = js_number_to_u64(window_id)?;
+        // ARGB format (0xAARRGGBB)
+        let color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32) | ((a as u32) << 24);
 
         let mut state = self
             .state
@@ -179,8 +222,8 @@ impl WindowManager {
     #[napi]
     pub fn clear(&self, window_id: JsNumber, r: u8, g: u8, b: u8) -> Result<()> {
         let window_id = js_number_to_u64(window_id)?;
-        // BGRA format for X11: AA BB GG RR
-        let color = (255_u32 << 24) | ((b as u32) << 16) | ((g as u32) << 8) | (r as u32);
+        // ARGB format (0xAARRGGBB)
+        let color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32) | (255_u32 << 24);
 
         let mut state = self
             .state
@@ -205,8 +248,8 @@ impl WindowManager {
     }
 
     fn clear_inner(&self, window_id: u64, r: u8, g: u8, b: u8) -> Result<()> {
-        // BGRA format for X11: AA BB GG RR
-        let color = (255_u32 << 24) | ((b as u32) << 16) | ((g as u32) << 8) | (r as u32);
+        // ARGB format (0xAARRGGBB)
+        let color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32) | (255_u32 << 24);
 
         let mut state = self
             .state
