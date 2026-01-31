@@ -125,23 +125,32 @@ impl WindowManagerApp {
             },
         );
 
-        // Add to shared state
-        let pixel_count = (width * height) as usize;
+        // Update the pre-registered window state with the actual winit_id
         let mut state = self.state.lock().expect("Lock poisoned");
-        state.windows.insert(
-            id,
-            WindowState {
-                width,
-                height,
-                pixel_buffer: vec![0xFF000000; pixel_count],
-                needs_redraw: true,
-                title,
-                x,
-                y,
-                always_on_top,
-                winit_id: Some(winit_id),
-            },
-        );
+
+        if let Some(window_state) = state.windows.get_mut(&id) {
+            // Window was pre-registered, just update the winit_id
+            window_state.winit_id = Some(winit_id);
+        } else {
+            // Fallback: create window state if not pre-registered (shouldn't happen)
+            let pixel_count = (width * height) as usize;
+            let pixel_buffer = vec![0xFF000000u32; pixel_count];
+
+            state.windows.insert(
+                id,
+                WindowState {
+                    width,
+                    height,
+                    pixel_buffer,
+                    needs_redraw: true,
+                    title,
+                    x,
+                    y,
+                    always_on_top,
+                    winit_id: Some(winit_id),
+                },
+            );
+        }
 
         window.request_redraw();
     }
@@ -156,6 +165,9 @@ impl WindowManagerApp {
                 let height =
                     NonZeroU32::new(window_state.height.max(1)).expect("Height should not be zero");
 
+                // Clone the pixel buffer to release the lock before surface operations
+                let pixel_buffer = window_state.pixel_buffer.clone();
+
                 drop(state); // Release lock before surface operations
 
                 managed
@@ -164,16 +176,12 @@ impl WindowManagerApp {
                     .expect("Failed to resize surface");
                 let mut buffer = managed.surface.buffer_mut().expect("Failed to get buffer");
 
-                let state = self.state.lock().expect("Lock poisoned");
-                if let Some(window_state) = state.windows.get(&managed.state_id) {
-                    let pixel_count = (window_state.width * window_state.height) as usize;
-                    let buffer_len = buffer.len();
+                let pixel_count = pixel_buffer.len();
+                let buffer_len = buffer.len();
 
-                    for i in 0..pixel_count.min(buffer_len) {
-                        buffer[i] = window_state.pixel_buffer[i];
-                    }
+                for i in 0..pixel_count.min(buffer_len) {
+                    buffer[i] = pixel_buffer[i];
                 }
-                drop(state);
 
                 buffer.present().unwrap_or_else(|e| {
                     eprintln!("Failed to present buffer: {}", e);

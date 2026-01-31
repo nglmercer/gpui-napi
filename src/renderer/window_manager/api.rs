@@ -112,6 +112,25 @@ impl WindowManager {
             .lock()
             .map_err(|_| napi::Error::new(napi::Status::GenericFailure, "Lock poisoned"))?;
 
+        // Pre-register the window in shared state so window_count() and window_exists() work immediately
+        let pixel_count = (width * height) as usize;
+        let pixel_buffer = vec![0xFF000000u32; pixel_count];
+
+        state.windows.insert(
+            id,
+            WindowState {
+                width,
+                height,
+                pixel_buffer,
+                needs_redraw: true,
+                title: title.clone(),
+                x,
+                y,
+                always_on_top,
+                winit_id: None, // Will be set when window is actually created
+            },
+        );
+
         state.pending_commands.push(WindowCommand::CreateWindow {
             id,
             width,
@@ -137,7 +156,8 @@ impl WindowManager {
         b: u8,
     ) -> Result<()> {
         let window_id = js_number_to_u64(window_id)?;
-        let color = (255_u32 << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
+        // BGRA format for X11: AA BB GG RR
+        let color = (255_u32 << 24) | ((b as u32) << 16) | ((g as u32) << 8) | (r as u32);
 
         let mut state = self
             .state
@@ -159,7 +179,8 @@ impl WindowManager {
     #[napi]
     pub fn clear(&self, window_id: JsNumber, r: u8, g: u8, b: u8) -> Result<()> {
         let window_id = js_number_to_u64(window_id)?;
-        let color = (255_u32 << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
+        // BGRA format for X11: AA BB GG RR
+        let color = (255_u32 << 24) | ((b as u32) << 16) | ((g as u32) << 8) | (r as u32);
 
         let mut state = self
             .state
@@ -184,7 +205,8 @@ impl WindowManager {
     }
 
     fn clear_inner(&self, window_id: u64, r: u8, g: u8, b: u8) -> Result<()> {
-        let color = (255_u32 << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
+        // BGRA format for X11: AA BB GG RR
+        let color = (255_u32 << 24) | ((b as u32) << 16) | ((g as u32) << 8) | (r as u32);
 
         let mut state = self
             .state
