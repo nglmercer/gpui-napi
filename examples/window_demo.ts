@@ -1,41 +1,56 @@
-import { SimpleWindow, WindowRenderer } from "../index";
+import { WindowManager } from "../index";
 
-// Demo 1: Simple colored window
-console.log("Creating a simple window...");
-const simpleWindow = new SimpleWindow(800, 600, "Winit + Softbuffer Demo");
-console.log("Window created. Showing with blue color...");
+// Demo: Non-blocking WindowManager with pixel manipulation
+console.log("Creating WindowManager...");
+const manager = new WindowManager();
 
-// Show the window with a blue background
-// Note: This will block until the window is closed
-simpleWindow.show(100, 150, 255);
+// Start the event loop
+manager.start();
 
-// Demo 2: WindowRenderer with pixel manipulation (uncomment to test)
+// Create a window
+console.log("Creating window...");
+const windowId = manager.createWindow(400, 400, "Non-blocking Window Demo");
+console.log(`Window created with ID: ${windowId}`);
 
-console.log("Creating WindowRenderer...");
-const renderer = new WindowRenderer(400, 400);
+// Convert bigint to number for the API
+const id = Number(windowId);
 
-// Fill with black
-renderer.clear();
+// Clear with black
+manager.clearBlack(id);
 
 // Draw a red diagonal line
 for (let i = 0; i < 400; i++) {
-  renderer.setPixel(i, i, 255, 0, 0);
+  manager.setPixel(id, i, i, 255, 0, 0);
 }
 
 // Draw a green horizontal line
 for (let x = 50; x < 350; x++) {
-  renderer.setPixel(x, 200, 0, 255, 0);
+  manager.setPixel(id, x, 200, 0, 255, 0);
 }
 
 // Draw a blue vertical line
 for (let y = 50; y < 350; y++) {
-  renderer.setPixel(200, y, 0, 0, 255);
+  manager.setPixel(id, 200, y, 0, 0, 255);
 }
 
-console.log("Pixel buffer prepared.");
+// Present the rendered pixels
+manager.present(id);
+console.log("Window presented. You can close it anytime.");
 
-// Present the rendered pixels in a window
-console.log("Opening window with rendered pixels...");
-renderer.present("Pixel Renderer Demo");
+// Demonstrate non-blocking behavior
+let counter = 0;
+const interval = setInterval(() => {
+  counter++;
+  console.log(`Non-blocking tick: ${counter}`);
+  
+  // Animate something - move a pixel
+  const x = 100 + (counter % 200);
+  manager.setPixel(id, x, 100, 255, 255, 0);
+  manager.present(id);
+  if (counter >= 10) {
+    clearInterval(interval);
+    console.log("Demo complete. Window is still open.");
+  }
+}, 1000);
 
-console.log("Window closed.");
+console.log("Main script completed - but the window stays open!");
