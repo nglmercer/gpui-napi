@@ -22,7 +22,8 @@ napi = { version = "3.8.2", features = ["napi9", "async"] }
 napi-derive = "3.5.1"
 chrono = "0.4"
 tokio = { version = "1", features = ["full"] }
-gpui = "0.2.2"
+winit = "0.30.12"
+softbuffer = "0.4"
 
 [build-dependencies]
 napi-build = "2"
