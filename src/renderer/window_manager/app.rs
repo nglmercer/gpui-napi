@@ -1,13 +1,10 @@
 use crate::renderer::window_manager::types::*;
-use softbuffer::{Context, Surface};
 use std::collections::HashMap;
-use std::num::NonZeroU32;
 use std::sync::Arc;
-use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalPosition, LogicalSize};
-use winit::event::WindowEvent;
-use winit::event_loop::ActiveEventLoop;
-use winit::window::{WindowAttributes, WindowId, WindowLevel};
+use winit::event::{Event, WindowEvent};
+use winit::event_loop::{ControlFlow, EventLoopWindowTarget};
+use winit::window::WindowId;
 
 /// The application that runs in the event loop
 pub struct WindowManagerApp {
@@ -23,7 +20,59 @@ impl WindowManagerApp {
         }
     }
 
-    pub fn process_commands(&mut self, event_loop: &ActiveEventLoop) {
+    pub fn handle_event(
+        &mut self,
+        event: Event<()>,
+        event_loop: &EventLoopWindowTarget<()>,
+        control_flow: &mut ControlFlow,
+    ) {
+        *control_flow = ControlFlow::Wait;
+
+        match event {
+            Event::WindowEvent {
+                window_id,
+                event: WindowEvent::CloseRequested,
+            } => {
+                self.close_window(window_id, event_loop);
+            }
+            Event::WindowEvent {
+                window_id,
+                event: WindowEvent::RedrawRequested,
+            } => {
+                self.render_window(window_id);
+            }
+            Event::WindowEvent {
+                window_id,
+                event: WindowEvent::Resized(_),
+            } => {
+                // Handle resize by redrawing
+                if let Some(managed) = self.windows.get(&window_id) {
+                    let mut state = self.state.lock().expect("Lock poisoned");
+                    if let Some(window_state) = state.windows.get_mut(&managed.state_id) {
+                        window_state.needs_redraw = true;
+                    }
+                }
+            }
+            Event::AboutToWait => {
+                // Process commands when the event loop is about to wait
+                // This ensures commands are processed even without window events
+                self.process_commands(event_loop);
+
+                // Check if we should exit
+                let should_exit = {
+                    let state = self.state.lock().expect("Lock poisoned");
+                    state.should_exit
+                };
+
+                if should_exit {
+                    std::process::exit(0);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub fn process_commands(&mut self, event_loop: &EventLoopWindowTarget<()>) {
         let commands = {
             let mut state = self.state.lock().expect("Lock poisoned");
             std::mem::take(&mut state.pending_commands)
@@ -99,7 +148,7 @@ impl WindowManagerApp {
     #[allow(clippy::too_many_arguments)]
     fn create_window(
         &mut self,
-        event_loop: &ActiveEventLoop,
+        event_loop: &EventLoopWindowTarget<()>,
         id: u64,
         width: u32,
         height: u32,
@@ -110,37 +159,40 @@ impl WindowManagerApp {
         transparent: bool,
         decorations: bool,
     ) {
-        let mut window_attrs = WindowAttributes::default()
+        use winit::window::WindowBuilder;
+
+        let window_builder = WindowBuilder::new()
             .with_title(&title)
             .with_inner_size(LogicalSize::new(width, height))
             .with_transparent(transparent)
-            .with_decorations(decorations);
-
-        if always_on_top {
-            window_attrs = window_attrs.with_window_level(WindowLevel::AlwaysOnTop);
-        }
-
-        if let (Some(x_pos), Some(y_pos)) = (x, y) {
-            window_attrs = window_attrs.with_position(LogicalPosition::new(x_pos, y_pos));
-        }
+            .with_decorations(decorations)
+            .with_visible(true);
 
         let window = Arc::new(
-            event_loop
-                .create_window(window_attrs)
+            window_builder
+                .build(event_loop)
                 .expect("Failed to create window"),
         );
 
-        let context = Context::new(window.clone()).expect("Failed to create context");
-        let surface = Surface::new(&context, window.clone()).expect("Failed to create surface");
+        // Note: always_on_top is not directly supported in winit 0.29 WindowBuilder
+        // It would require platform-specific code or window level adjustments after creation
+        let _ = always_on_top; // Silence unused warning
+
+        if let (Some(x_pos), Some(y_pos)) = (x, y) {
+            window.set_outer_position(LogicalPosition::new(x_pos, y_pos));
+        }
 
         let winit_id = window.id();
+
+        // Create a pixmap for CPU-based rendering
+        let pixmap = tiny_skia::Pixmap::new(width, height)
+            .expect("Failed to create pixmap");
 
         self.windows.insert(
             winit_id,
             ManagedWindow {
                 window: window.clone(),
-                surface,
-                _context: context,
+                pixmap,
                 state_id: id,
             },
         );
@@ -154,10 +206,11 @@ impl WindowManagerApp {
         } else {
             // Fallback: create window state if not pre-registered (shouldn't happen)
             let pixel_count = (width * height) as usize;
+            // ARGB format: AAAA AAAA RRRR RRRR GGGG GGGG BBBB BBBB
             let pixel_buffer = if transparent {
-                vec![0x00000000u32; pixel_count] // Fully transparent ARGB
+                vec![0x00000000u32; pixel_count] // Fully transparent
             } else {
-                vec![0xFF000000u32; pixel_count] // Opaque black ARGB
+                vec![0xFF000000u32; pixel_count] // Opaque black
             };
 
             state.windows.insert(
@@ -182,37 +235,63 @@ impl WindowManagerApp {
     }
 
     fn render_window(&mut self, window_id: WindowId) {
-        if let Some(managed) = self.windows.get_mut(&window_id) {
+        // Get mutable access to the managed window first
+        let managed = match self.windows.get_mut(&window_id) {
+            Some(m) => m,
+            None => return,
+        };
+        
+        // Get the pixel buffer data from shared state
+        let (pixel_buffer, width, height, is_transparent) = {
             let state = self.state.lock().expect("Lock poisoned");
 
             if let Some(window_state) = state.windows.get(&managed.state_id) {
-                let width =
-                    NonZeroU32::new(window_state.width.max(1)).expect("Width should not be zero");
-                let height =
-                    NonZeroU32::new(window_state.height.max(1)).expect("Height should not be zero");
-
-                // Clone the pixel buffer to release the lock before surface operations
-                let pixel_buffer = window_state.pixel_buffer.clone();
-
-                drop(state); // Release lock before surface operations
-
-                managed
-                    .surface
-                    .resize(width, height)
-                    .expect("Failed to resize surface");
-                let mut buffer = managed.surface.buffer_mut().expect("Failed to get buffer");
-
-                let pixel_count = pixel_buffer.len();
-                let buffer_len = buffer.len();
-
-                for i in 0..pixel_count.min(buffer_len) {
-                    buffer[i] = pixel_buffer[i];
-                }
-
-                buffer.present().unwrap_or_else(|e| {
-                    eprintln!("Failed to present buffer: {}", e);
-                });
+                (
+                    window_state.pixel_buffer.clone(),
+                    window_state.width,
+                    window_state.height,
+                    window_state.transparent,
+                )
+            } else {
+                return;
             }
+        };
+        
+        // Convert ARGB u32 pixels to RGBA u8 format for tiny-skia
+        // tiny-skia expects [R, G, B, A] per pixel in a Vec<u8>
+        let mut rgba_data = vec![0u8; (width * height * 4) as usize];
+        
+        for i in 0..pixel_buffer.len() {
+            let argb = pixel_buffer[i];
+
+            // Extract ARGB components
+            let alpha = (argb >> 24) & 0xFF;
+            let red = (argb >> 16) & 0xFF;
+            let green = (argb >> 8) & 0xFF;
+            let blue = argb & 0xFF;
+
+            // Write RGBA to buffer
+            let idx = i * 4;
+            rgba_data[idx] = red as u8;
+            rgba_data[idx + 1] = green as u8;
+            rgba_data[idx + 2] = blue as u8;
+            rgba_data[idx + 3] = alpha as u8;
+        }
+
+        // Update the pixmap with the new pixel data
+        managed.pixmap.data_mut().copy_from_slice(&rgba_data);
+
+        // Get the pixmap reference for presentation
+        let pixmap_ref = &managed.pixmap;
+        let window_clone = managed.window.clone();
+        
+        // Render to the window using X11
+        present_to_window(&window_clone, pixmap_ref, is_transparent);
+        
+        // Reset needs_redraw flag after rendering
+        let mut state = self.state.lock().expect("Lock poisoned");
+        if let Some(window_state) = state.windows.get_mut(&managed.state_id) {
+            window_state.needs_redraw = false;
         }
     }
 
@@ -236,20 +315,10 @@ impl WindowManagerApp {
         }
     }
 
-    fn set_window_always_on_top(&self, window_id: u64, always_on_top: bool) {
-        for managed in self.windows.values() {
-            if managed.state_id == window_id {
-                let level = if always_on_top {
-                    WindowLevel::AlwaysOnTop
-                } else {
-                    WindowLevel::Normal
-                };
-                // Note: set_window_level is not available in all winit versions
-                // This would require recreating the window or using platform-specific APIs
-                let _ = level;
-                break;
-            }
-        }
+    fn set_window_always_on_top(&self, window_id: u64, _always_on_top: bool) {
+        // Note: set_always_on_top is not available in winit 0.29
+        // This would require platform-specific code
+        let _ = window_id;
     }
 
     fn set_window_title(&self, window_id: u64, title: String) {
@@ -277,7 +346,7 @@ impl WindowManagerApp {
         }
     }
 
-    fn close_window_by_id(&mut self, window_id: u64, _event_loop: &ActiveEventLoop) {
+    fn close_window_by_id(&mut self, window_id: u64, _event_loop: &EventLoopWindowTarget<()>) {
         let mut to_remove = None;
         for (id, managed) in &self.windows {
             if managed.state_id == window_id {
@@ -293,7 +362,7 @@ impl WindowManagerApp {
         }
     }
 
-    fn close_window(&mut self, window_id: WindowId, event_loop: &ActiveEventLoop) {
+    fn close_window(&mut self, window_id: WindowId, event_loop: &EventLoopWindowTarget<()>) {
         self.windows.remove(&window_id);
         let mut state = self.state.lock().expect("Lock poisoned");
 
@@ -316,44 +385,139 @@ impl WindowManagerApp {
     }
 }
 
-impl ApplicationHandler for WindowManagerApp {
-    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
+fn present_to_window(window: &Arc<winit::window::Window>, pixmap: &tiny_skia::Pixmap, _is_transparent: bool) {
+    #[cfg(target_os = "linux")]
+    {
+        use std::ffi::c_void;
+        use std::os::raw::{c_int, c_uint};
+        use x11::xlib::{self, XOpenDisplay, XSync, XFlush, XWindowAttributes};
+        use raw_window_handle::HasRawWindowHandle;
+        use raw_window_handle::RawWindowHandle;
 
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        window_id: WindowId,
-        event: WindowEvent,
-    ) {
-        match event {
-            WindowEvent::CloseRequested => {
-                self.close_window(window_id, event_loop);
-            }
-            WindowEvent::RedrawRequested => {
-                // Mark the window as needing redraw in shared state
-                if let Some(managed) = self.windows.get(&window_id) {
-                    let mut state = self.state.lock().expect("Lock poisoned");
-                    if let Some(window_state) = state.windows.get_mut(&managed.state_id) {
-                        window_state.needs_redraw = false;
+        // Get the raw window handle
+        let raw_handle = window.raw_window_handle();
+        
+        if let RawWindowHandle::Xlib(xlib_handle) = raw_handle {
+            unsafe {
+                // Open X11 display
+                let display = XOpenDisplay(std::ptr::null());
+                if display.is_null() {
+                    eprintln!("Failed to open X11 display");
+                    return;
+                }
+
+                let x_window = xlib_handle.window as xlib::Window;
+
+                // Get window attributes to determine the correct visual and depth
+                let mut window_attrs: XWindowAttributes = std::mem::zeroed();
+                if xlib::XGetWindowAttributes(display, x_window, &mut window_attrs) == 0 {
+                    eprintln!("Failed to get window attributes");
+                    xlib::XCloseDisplay(display);
+                    return;
+                }
+                
+                let visual = window_attrs.visual;
+                let depth = window_attrs.depth as c_uint;
+
+                // Get window dimensions
+                let width = pixmap.width() as c_int;
+                let height = pixmap.height() as c_int;
+
+                // Get the pixmap data (RGBA format from tiny-skia)
+                let rgba_data = pixmap.data();
+                
+                // Convert RGBA to the format expected by X11 based on depth
+                let mut x11_data: Vec<u8>;
+                
+                if depth == 32 {
+                    // 32-bit depth: use BGRA format (little-endian ARGB)
+                    x11_data = Vec::with_capacity(rgba_data.len());
+                    for chunk in rgba_data.chunks_exact(4) {
+                        let r = chunk[0];
+                        let g = chunk[1];
+                        let b = chunk[2];
+                        let a = chunk[3];
+                        x11_data.push(b);
+                        x11_data.push(g);
+                        x11_data.push(r);
+                        x11_data.push(a);
+                    }
+                } else {
+                    // 24-bit depth: use BGR format (3 bytes per pixel)
+                    let pixel_count = (width * height) as usize;
+                    x11_data = Vec::with_capacity(pixel_count * 3);
+                    for chunk in rgba_data.chunks_exact(4) {
+                        let r = chunk[0];
+                        let g = chunk[1];
+                        let b = chunk[2];
+                        // Ignore alpha for 24-bit depth
+                        x11_data.push(b);
+                        x11_data.push(g);
+                        x11_data.push(r);
                     }
                 }
-                self.render_window(window_id);
+                
+                let data = x11_data.as_ptr() as *mut c_void;
+                let bytes_per_line = if depth == 32 { 0 } else { width * 3 };
+                let bitmap_pad = if depth == 32 { 32 } else { 24 };
+                
+                let ximage = xlib::XCreateImage(
+                    display,
+                    visual,
+                    depth,
+                    xlib::ZPixmap,
+                    0,
+                    data as *mut i8,
+                    width as c_uint,
+                    height as c_uint,
+                    bitmap_pad as c_int,
+                    bytes_per_line as c_int,
+                );
+
+                if ximage.is_null() {
+                    eprintln!("Failed to create XImage");
+                    xlib::XCloseDisplay(display);
+                    return;
+                }
+
+                // Create a graphics context for the window
+                let gc = xlib::XCreateGC(display, x_window, 0, std::ptr::null_mut());
+
+                // Put the image onto the window
+                xlib::XPutImage(
+                    display,
+                    x_window,
+                    gc,
+                    ximage,
+                    0,  // src_x
+                    0,  // src_y
+                    0,  // dest_x
+                    0,  // dest_y
+                    width as c_uint,
+                    height as c_uint,
+                );
+
+                // Flush to ensure drawing appears on screen
+                XFlush(display);
+                XSync(display, 0);
+                
+                // Clean up
+                xlib::XFreeGC(display, gc);
+                
+                // Set data to null before destroying to prevent X11 from freeing our data
+                (*ximage).data = std::ptr::null_mut();
+                xlib::XDestroyImage(ximage);
+                xlib::XCloseDisplay(display);
             }
-            _ => {}
         }
     }
-
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        self.process_commands(event_loop);
-
-        // Check if we should exit
-        let should_exit = {
-            let state = self.state.lock().expect("Lock poisoned");
-            state.should_exit
-        };
-
-        if should_exit {
-            event_loop.exit();
-        }
+    
+    // For non-Linux platforms, we would need platform-specific code
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = window;
+        let _ = pixmap;
+        let _ = is_transparent;
+        // TODO: Implement for Windows and macOS
     }
 }

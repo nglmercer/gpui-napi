@@ -33,7 +33,9 @@ const topWindow = Number(manager.createWindowWithOptions(
   300, 200,
   "3. Always on Top",
   700, 100,
-  true // alwaysOnTop
+  true,  // alwaysOnTop
+  false, // transparent
+  true   // decorations
 ));
 manager.clear(topWindow, 150, 0, 0);
 drawLabel(topWindow, 50, 100, "Always On Top!", 255, 255, 255);

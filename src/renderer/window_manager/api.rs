@@ -4,10 +4,11 @@ use napi_derive::napi;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use winit::event_loop::{ControlFlow, EventLoop};
+use winit::event_loop::EventLoop;
 
 #[cfg(target_os = "linux")]
 use winit::platform::x11::EventLoopBuilderExtX11;
+use winit::event_loop::EventLoopBuilder;
 
 use crate::renderer::window_manager::app::WindowManagerApp;
 use crate::renderer::window_manager::types::*;
@@ -47,9 +48,9 @@ impl WindowManager {
         let state = self.state.clone();
 
         let handle = thread::spawn(move || {
-            // Build event loop with any_thread flag for Linux (X11)
+            // Create event loop with any_thread flag for Linux
             #[cfg(target_os = "linux")]
-            let event_loop = EventLoop::builder()
+            let event_loop = EventLoopBuilder::new()
                 .with_any_thread(true)
                 .build()
                 .expect("Failed to create event loop");
@@ -57,10 +58,15 @@ impl WindowManager {
             #[cfg(not(target_os = "linux"))]
             let event_loop = EventLoop::new().expect("Failed to create event loop");
 
-            event_loop.set_control_flow(ControlFlow::Poll);
-
             let mut app = WindowManagerApp::new(state);
-            event_loop.run_app(&mut app).expect("Event loop failed");
+            let _ = event_loop.run(move |event, event_loop| {
+                // winit 0.29 run takes 2 arguments: event and event_loop
+                // We need to adapt this to our 3-argument handler
+                use winit::event_loop::ControlFlow;
+                
+                let mut control_flow = ControlFlow::Wait;
+                app.handle_event(event, event_loop, &mut control_flow);
+            });
         });
 
         self._event_loop_handle = Some(handle);
@@ -117,11 +123,13 @@ impl WindowManager {
 
         // Pre-register the window in shared state so window_count() and window_exists() work immediately
         let pixel_count = (width * height) as usize;
-        // For transparent windows, initialize with transparent pixels (alpha = 0)
+        // ARGB format: AAAA AAAA RRRR RRRR GGGG GGGG BBBB BBBB
+        // For transparent windows, initialize with fully transparent pixels (alpha = 0)
+        // For opaque windows, initialize with opaque black (alpha = 255)
         let pixel_buffer = if transparent {
-            vec![0x00000000u32; pixel_count] // Fully transparent ARGB
+            vec![0x00000000u32; pixel_count] // Fully transparent ARGB (A=0, R=0, G=0, B=0)
         } else {
-            vec![0xFF000000u32; pixel_count] // Opaque black ARGB
+            vec![0xFF000000u32; pixel_count] // Opaque black ARGB (A=255, R=0, G=0, B=0)
         };
 
         state.windows.insert(
@@ -157,6 +165,7 @@ impl WindowManager {
     }
 
     /// Set a pixel in a window's buffer
+    /// Sets the pixel to opaque (alpha = 255) with the given RGB values
     #[napi]
     pub fn set_pixel(
         &self,
@@ -168,9 +177,9 @@ impl WindowManager {
         b: u8,
     ) -> Result<()> {
         let window_id = js_number_to_u64(window_id)?;
-        // Softbuffer uses 0RGB format: 00 RRRRRRRR GGGGGGGG BBBBBBBB
-        // The high byte is ignored, so we use 0x00 for opaque
-        let color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
+        // ARGB format: AAAA AAAA RRRR RRRR GGGG GGGG BBBB BBBB
+        // Alpha is in the high byte (0xFF = fully opaque)
+        let color = ((0xFF as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
 
         let mut state = self
             .state
@@ -189,7 +198,7 @@ impl WindowManager {
     }
 
     /// Set a pixel with alpha (RGBA) in a window's buffer
-    /// Note: Alpha channel is not supported by softbuffer. The alpha value is ignored.
+    /// The alpha value controls transparency: 0 = fully transparent, 255 = fully opaque
     #[napi]
     #[allow(clippy::too_many_arguments)]
     pub fn set_pixel_rgba(
@@ -200,12 +209,12 @@ impl WindowManager {
         r: u8,
         g: u8,
         b: u8,
-        _a: u8,
+        a: u8,
     ) -> Result<()> {
         let window_id = js_number_to_u64(window_id)?;
-        // Softbuffer uses 0RGB format (no alpha support in pixel data)
-        // Alpha is handled by the window's transparency setting, not per-pixel
-        let color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
+        // ARGB format: AAAA AAAA RRRR RRRR GGGG GGGG BBBB BBBB
+        // Alpha is in the high byte (bits 24-31)
+        let color = ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
 
         let mut state = self
             .state
@@ -223,12 +232,15 @@ impl WindowManager {
         Ok(())
     }
 
-    /// Clear a window's buffer to a color
+    /// Clear a window's buffer to a color with optional alpha
+    /// If alpha is not provided, defaults to 255 (fully opaque)
     #[napi]
-    pub fn clear(&self, window_id: JsNumber, r: u8, g: u8, b: u8) -> Result<()> {
+    pub fn clear(&self, window_id: JsNumber, r: u8, g: u8, b: u8, a: Option<u8>) -> Result<()> {
         let window_id = js_number_to_u64(window_id)?;
-        // Softbuffer uses 0RGB format: 00 RRRRRRRR GGGGGGGG BBBBBBBB
-        let color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
+        // ARGB format: AAAA AAAA RRRR RRRR GGGG GGGG BBBB BBBB
+        // Alpha defaults to 255 (fully opaque) if not provided
+        let alpha = a.unwrap_or(0xFF);
+        let color = ((alpha as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
 
         let mut state = self
             .state
@@ -253,8 +265,9 @@ impl WindowManager {
     }
 
     fn clear_inner(&self, window_id: u64, r: u8, g: u8, b: u8) -> Result<()> {
-        // Softbuffer uses 0RGB format: 00 RRRRRRRR GGGGGGGG BBBBBBBB
-        let color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
+        // ARGB format: AAAA AAAA RRRR RRRR GGGG GGGG BBBB BBBB
+        // clear_black always uses opaque black
+        let color = ((0xFF as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
 
         let mut state = self
             .state

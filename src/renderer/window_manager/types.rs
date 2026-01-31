@@ -78,7 +78,6 @@ pub enum WindowCommand {
 /// Internal window data managed by the event loop
 pub struct ManagedWindow {
     pub window: Arc<winit::window::Window>,
-    pub surface: softbuffer::Surface<Arc<winit::window::Window>, Arc<winit::window::Window>>,
-    pub _context: softbuffer::Context<Arc<winit::window::Window>>,
+    pub pixmap: tiny_skia::Pixmap,
     pub state_id: u64,
 }
